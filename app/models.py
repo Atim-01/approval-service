@@ -10,8 +10,10 @@ from sqlalchemy import (
     Index,
     ForeignKey,
     Integer,
+    UniqueConstraint,
 )
 from app.database import Base
+
 import enum
 
 
@@ -116,3 +118,29 @@ class OutboxEvent(Base):
     payload = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     published_at = Column(DateTime, nullable=True, index=True)
+
+class IdempotencyRecord(Base):
+    """Stores the outcome of a previously-processed idempotent request.
+
+    Keyed on (workspace_id, endpoint, idempotency_key). A replayed request
+    with the same key and same body hash gets the original response back
+    instead of re-executing the side effect. A replayed key with a
+    different body is rejected as a client error.
+    """
+
+    __tablename__ = "idempotency_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(String(128), nullable=False)
+    endpoint = Column(String(128), nullable=False)
+    idempotency_key = Column(String(256), nullable=False)
+    request_hash = Column(String(64), nullable=False)
+    response_status_code = Column(Integer, nullable=False)
+    response_body = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id", "endpoint", "idempotency_key", name="uq_idempotency_scope"
+        ),
+    )
