@@ -96,3 +96,23 @@ class AuditLog(Base):
     to_status = Column(String(32), nullable=True)
     details = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+class OutboxEvent(Base):
+    """Transactional outbox for future event-based integrations.
+
+    Rows are written in the same DB transaction as the state change that
+    produced them. A separate publisher process (not part of this
+    assignment) would poll `published_at IS NULL`, publish to a broker,
+    and mark the row published.
+    """
+
+    __tablename__ = "outbox_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(String(128), nullable=False, index=True)
+    aggregate_type = Column(String(64), nullable=False, default="approval_request")
+    aggregate_id = Column(String(36), nullable=False, index=True)
+    event_type = Column(String(128), nullable=False)
+    payload = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    published_at = Column(DateTime, nullable=True, index=True)
