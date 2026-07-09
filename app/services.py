@@ -68,3 +68,39 @@ def _event_payload(req: ApprovalRequest) -> dict:
         "requestedByUserId": req.requested_by_user_id,
         "decidedByUserId": req.decided_by_user_id,
     }
+
+def create_approval_request(
+    db: Session, workspace_id: str, actor_user_id: str, payload: ApprovalRequestCreate
+) -> ApprovalRequest:
+    req = ApprovalRequest(
+        workspace_id=workspace_id,
+        source_type=payload.sourceType,
+        source_id=payload.sourceId,
+        reviewer_user_ids=payload.reviewerUserIds,
+        requested_by_user_id=actor_user_id,
+        status=ApprovalStatus.pending,
+        title=payload.title,
+        description=payload.description,
+        request_metadata=payload.metadata,
+    )
+    db.add(req)
+    db.flush()  # populate req.id before we reference it below
+
+    _write_audit(
+        db,
+        workspace_id=workspace_id,
+        approval_request_id=req.id,
+        actor_user_id=actor_user_id,
+        action="created",
+        from_status=None,
+        to_status=ApprovalStatus.pending.value,
+        details={"sourceType": payload.sourceType.value, "sourceId": payload.sourceId},
+    )
+    _write_outbox(
+        db,
+        workspace_id=workspace_id,
+        approval_request_id=req.id,
+        event_type="approval_request.created",
+        payload=_event_payload(req),
+    )
+    return req
