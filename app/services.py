@@ -141,3 +141,55 @@ def list_approval_requests(
         q.order_by(ApprovalRequest.created_at.desc()).offset(offset).limit(limit).all()
     )
     return items, total
+
+def _ensure_transitionable(req: ApprovalRequest) -> None:
+    if req.status in FINAL_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"approval request is already in a final state: {req.status.value}",
+        )
+
+
+def decide(
+    db: Session,
+    *,
+    workspace_id: str,
+    request_id: str,
+    actor_user_id: str,
+    new_status: ApprovalStatus,
+    reason: Optional[str],
+) -> ApprovalRequest:
+    req = get_approval_request(db, workspace_id, request_id)
+    _ensure_transitionable(req)
+
+    from_status = req.status.value
+    req.status = new_status
+    req.decision_reason = reason
+    req.decided_by_user_id = actor_user_id
+    req.decided_at = datetime.utcnow()
+
+    action = {
+        ApprovalStatus.approved: "approved",
+        ApprovalStatus.rejected: "rejected",
+        ApprovalStatus.cancelled: "cancelled",
+    }[new_status]
+
+    _write_audit(
+        db,
+        workspace_id=workspace_id,
+        approval_request_id=req.id,
+        actor_user_id=actor_user_id,
+        action=action,
+        from_status=from_status,
+        to_status=new_status.value,
+        details={"reason": reason} if reason else None,
+    )
+    _write_outbox(
+        db,
+        workspace_id=workspace_id,
+        approval_request_id=req.id,
+        event_type=f"approval_request.{action}",
+        payload=_event_payload(req),
+    )
+    db.flush()
+    return req
