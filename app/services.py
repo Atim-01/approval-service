@@ -104,3 +104,40 @@ def create_approval_request(
         payload=_event_payload(req),
     )
     return req
+
+def get_approval_request(db: Session, workspace_id: str, request_id: str) -> ApprovalRequest:
+    req = (
+        db.query(ApprovalRequest)
+        .filter(ApprovalRequest.id == request_id, ApprovalRequest.workspace_id == workspace_id)
+        .first()
+    )
+    if req is None:
+        # Same 404 whether the id doesn't exist at all or belongs to another
+        # workspace - never reveal cross-workspace existence.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="approval request not found")
+    return req
+
+
+def list_approval_requests(
+    db: Session,
+    workspace_id: str,
+    *,
+    status_filter: Optional[ApprovalStatus] = None,
+    source_type: Optional[str] = None,
+    source_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Tuple[List[ApprovalRequest], int]:
+    q = db.query(ApprovalRequest).filter(ApprovalRequest.workspace_id == workspace_id)
+    if status_filter is not None:
+        q = q.filter(ApprovalRequest.status == status_filter)
+    if source_type is not None:
+        q = q.filter(ApprovalRequest.source_type == source_type)
+    if source_id is not None:
+        q = q.filter(ApprovalRequest.source_id == source_id)
+
+    total = q.count()
+    items = (
+        q.order_by(ApprovalRequest.created_at.desc()).offset(offset).limit(limit).all()
+    )
+    return items, total
