@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: approval_service
+      POSTGRES_PASSWORD: approval_service
+      POSTGRES_DB: approval_service
+    ports:
+      - "5432:5432"
+    volumes:
+      - approval_service_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U approval_service -d approval_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg2://approval_service:approval_service@db:5432/approval_service
+      ENV: production
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  approval_service_pgdata:
